@@ -22,7 +22,7 @@ public:
     
     bool hasMovement();
     bool checkForLoop();
-    void getBestLoop(cv::Mat start);
+    void getBestLoop(cv::Mat start,cv::Scalar startMean);
     bool ditchSimilarLoop();
     void populateLoopEnds();
     void initEnds();
@@ -61,8 +61,11 @@ public:
     vector< vector<ofImage> > loops;
     vector<ofImage> mostRecentSaved;
     int mostReceIndex;
-    vector<ofVec2f> loopIndeces;
+    //vector<ofVec2f> loopIndeces;
+    vector< vector<int> > loopIndeces;
+    int tempLoopIndeces[2];
     vector< vector<ofImage> > displayLoops;
+    vector< cv::Mat > loopStartMats;
     vector<int> matchIndeces;
     vector<int> loopLengths;
     vector<int> loopPlayIdx;

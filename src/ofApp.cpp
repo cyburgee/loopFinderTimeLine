@@ -14,7 +14,7 @@ void ofApp::setup(){
     minMovementBool = true;
     maxMovementThresh = 20;
     maxMovementBool = false;
-    loopThresh = 90.0;
+    loopThresh = 80.0;
     minChangeRatio = MAXFLOAT;
     minPeriodSecs = 0.5;
     maxPeriodSecs = 2.0;
@@ -30,7 +30,7 @@ void ofApp::setup(){
     
     
     //LOAD VIDEO FILE
-    ofFileDialogResult result = ofSystemLoadDialog("select video",false);
+    ofFileDialogResult result = ofSystemLoadDialog("Choose A Video File",false);
     if(result.bSuccess){
         loadVideo(result.getPath(),result.getName());
     }
@@ -44,7 +44,7 @@ void ofApp::setup(){
     cout<< "frameRate: " << ofGetFrameRate() << endl;
     //frameStart = 0;
     //initEnds();
-    pausePlayback = true;
+    //pausePlayback = true;
     scrolling = false;
     dragPoint = ofPoint(0,0);
     
@@ -60,18 +60,24 @@ void ofApp::setup(){
     //needToInitEnds = true;
 }
 
+
 //------------------------------------------------------------------------------------
 void ofApp::initEnds(){
     if (potentialLoopEnds.size() > 0){
         potentialLoopEnds.clear();
-        frameNumsInEnds.clear();
+        //frameNumsInEnds.clear();
     }
+
+    //vidPlayer.play();
+    //vidPlayer.idleMovie();
+    vidPlayer.setPaused(true);
+    vidPlayer.setFrame(frameStart);
+    //cout << "Updating Vid Player" << endl;
+    vidPlayer.update();
     
-    //for (int i = timeline.getCurrentFrame(); i < vidPlayer.getTotalNumFrames() && i < timeline.getCurrentFrame() + maxPeriod; i++) {
-    vidPlayer.idleMovie();
     for (int i = frameStart; i < vidPlayer.getTotalNumFrames() && i < frameStart + maxPeriod; i++) {
-        vidPlayer.setFrame(i);
-        vidPlayer.update();
+        //vidPlayer.setFrame(i);
+        //vidPlayer.update();
         cout << "init ends frame: " << vidPlayer.getCurrentFrame() << endl;
         cv::Mat currGray;
         cv::cvtColor(toCv(vidPlayer), currGray, CV_RGB2GRAY);
@@ -79,29 +85,30 @@ void ofApp::initEnds(){
         cv::resize(currGray, currFrame, imResize);
         
         potentialLoopEnds.push_back(currFrame);
-        frameNumsInEnds.push_back(i);
+        //frameNumsInEnds.push_back(i);
+        vidPlayer.nextFrame();
+        //cout << "Updating Vid Player" << endl;
+        vidPlayer.update();
     }
-    //vidPlayer.setFrame(timeline.getCurrentFrame());
     vidPlayer.setFrame(frameStart);
+    //cout << "Updating Vid Player" << endl;
     vidPlayer.update();
     needToInitEnds = false;
 }
+
 
 //------------------------------------------------------------------------------------
 void ofApp::populateLoopEnds(){
     if (potentialLoopEnds.size() > 0){
         potentialLoopEnds.erase(potentialLoopEnds.begin());
-        frameNumsInEnds.erase(frameNumsInEnds.begin());
-        //if (frameStart != timeline.getCurrentFrame() - 1) {
-        //    cout << "discrepancy here" << endl;
-        //}
-        //frameStart = timeline.getCurrentFrame();
-        //int endIdx = timeline.getCurrentFrame() + maxPeriod;
+        //frameNumsInEnds.erase(frameNumsInEnds.begin());
+        
         int endIdx = frameStart + maxPeriod;
-        cout << "adding frame at: " << endIdx << endl;
+        //cout << "adding frame at: " << endIdx << endl;
         vidPlayer.idleMovie();
         if (endIdx < vidPlayer.getTotalNumFrames()){
             vidPlayer.setFrame(endIdx);
+            //cout << "Updating Vid Player" << endl;
             vidPlayer.update();
             
             cv::Mat endGray;
@@ -110,14 +117,16 @@ void ofApp::populateLoopEnds(){
             cv::resize(endGray, endFrame, imResize);
             
             potentialLoopEnds.push_back(endFrame);
-            frameNumsInEnds.push_back(endIdx);
+            //frameNumsInEnds.push_back(endIdx);
         }
     }
     else{
         initEnds();
     }
+    
     //vidPlayer.setFrame(timeline.getCurrentFrame());
     vidPlayer.setFrame(frameStart);
+    //cout << "Updating Vid Player" << endl;
     vidPlayer.update();
 }
 
@@ -127,12 +136,16 @@ bool ofApp::checkForLoop(){
     if (potentialLoopEnds.size() == 0)
         return false;
     
-    cv::Mat start = potentialLoopEnds.at(0);
-    
+    cv::Mat start;
+    potentialLoopEnds.at(0).copyTo(start);
+    cv::Scalar startMean = cv::mean(start);
+    cv::subtract(start, startMean, start);
     float startSum = cv::sum(start)[0] + 1; //add one to get rid of division by 0 if screen is black
     cv::Mat currEnd;
     for (int i = minPeriod; i < potentialLoopEnds.size(); i++) {
-        cv::Mat currEnd = potentialLoopEnds.at(i);
+        cv::Mat currEnd;
+        potentialLoopEnds.at(i).copyTo(currEnd);
+        cv::subtract(currEnd, startMean, currEnd);
         cv::Mat diff;
         cv::absdiff(start, currEnd, diff);
         float endDiff = cv::sum(diff)[0] + 1;
@@ -143,6 +156,7 @@ bool ofApp::checkForLoop(){
             minChangeRatio = changeRatio;
             //cout << "min Ratio: " << minChangeRatio << endl;
         }
+        
         cout << "frameStart: " << frameStart << endl;
         cout << "compare Frame: " << frameStart + i << endl;
         cout << "startSum: " << startSum << endl;
@@ -153,11 +167,7 @@ bool ofApp::checkForLoop(){
         cout << endl;
         
         if ((changeRatio*100) < (100 - loopThresh)){//set to change percentage
-            //cout << "change Ratio: " << changeRatio << endl;
-            //cout << "test Thresh: " << 1 - loopThresh/100 << endl;
-            //potentialEndIdx = timeline.getCurrentFrame() + i;
             potentialEndIdx = frameStart + i;
-            //cout << "timeline Frame: " << timeline.getCurrentFrame() << endl;
             //cout << "potentialEnd: " << potentialEndIdx << endl;
             if (minMovementBool || maxMovementBool){
                 if  (hasMovement()){
@@ -182,17 +192,14 @@ bool ofApp::checkForLoop(){
     }
     
     if (bestMatches.size() > 0) {
-        //vidPlayer.setFrame(timeline.getCurrentFrame());
         vidPlayer.setFrame(frameStart);
         vidPlayer.update();
-        getBestLoop(start);
-        //vidPlayer.setFrame(timeline.getCurrentFrame());
+        getBestLoop(start,startMean);
         vidPlayer.setFrame(frameStart);
         vidPlayer.update();
         return true;
     }
     
-    //vidPlayer.setFrame(timeline.getCurrentFrame());
     vidPlayer.setFrame(frameStart);
     vidPlayer.update();
     return false;
@@ -202,13 +209,19 @@ bool ofApp::checkForLoop(){
 bool ofApp::hasMovement(){
     float sumDiff = 0;
     
-    cv::Mat prevFrame = potentialLoopEnds.at(0);
+    cv::Mat prevFrame;
+    potentialLoopEnds.at(0).copyTo(prevFrame);
+    cv::Scalar prevMean = cv::mean(prevFrame); //DO MEAN INSIDE LOOP?
+    cv::subtract(prevFrame,prevMean,prevFrame);
     float prevSum = cv::sum(prevFrame)[0] + 1; //add one to get rid of division by 0 if screen is black
 
     cv::Mat currFrame;
+    
     //for (int i = 1; i <= potentialEndIdx - timeline.getCurrentFrame(); i++) {
     for (int i = 1; i <= potentialEndIdx - frameStart; i++) {
-        cv::Mat currFrame = potentialLoopEnds.at(i);
+        cv::Mat currFrame;
+        potentialLoopEnds.at(i).copyTo(currFrame);
+        cv::subtract(currFrame, prevMean, currFrame);
         cv::Mat diff;
         cv::absdiff(currFrame,prevFrame,diff);
         float endDiff = cv::sum(diff)[0] + 1;
@@ -247,13 +260,15 @@ bool ofApp::hasMovement(){
 }
 
 //------------------------------------------------------------------------------------
-void ofApp::getBestLoop(cv::Mat start){
+void ofApp::getBestLoop(cv::Mat start,cv::Scalar startMean){
     float minChange = MAXFLOAT;
     int bestEnd = -1;
     float startSum = cv::sum(start)[0] + 1; //add one to get rid of division by 0 if screen is black
     
     for (int i = 0; i < bestMatches.size(); i++) {
-        cv::Mat currEnd = potentialLoopEnds.at(i);
+        cv::Mat currEnd;
+        potentialLoopEnds.at(i).copyTo(currEnd);
+        cv::subtract(currEnd,startMean,currEnd);
         cv::Mat diff;
         cv::absdiff(start, currEnd, diff);
         float endDiff = cv::sum(diff)[0] + 1;
@@ -272,35 +287,48 @@ void ofApp::getBestLoop(cv::Mat start){
     //loopFrameGrabber.loadMovie(videoFilePath,decodeMode);
     if (bestEnd >= 0) {
         vector< ofImage> display;
-        vidPlayer.idleMovie();
-        //for (int j = timeline.getCurrentFrame(); j <= matchIndeces.at(bestEnd); j++) {
+        //vidPlayer.idleMovie();
+        vidPlayer.setPaused(true);
+        vidPlayer.setFrame(frameStart);
+        cout << "Updating Vid Player" << endl;
+        vidPlayer.update();
+        
         for (int j = frameStart; j <= matchIndeces.at(bestEnd); j++) {
             //loopFrameGrabber.setFrame(j);
             //loopFrameGrabber.update();
-            vidPlayer.setFrame(j);
-            vidPlayer.update();
+            //vidPlayer.setFrame(j);
+            //vidPlayer.update();
             ofImage loopee;
             loopee.setFromPixels(vidPlayer.getPixels(), vidPlayer.getWidth(), vidPlayer.getHeight(), OF_IMAGE_COLOR);
             //loopee.setFromPixels(loopFrameGrabber.getPixels(), loopFrameGrabber.getWidth(), loopFrameGrabber.getHeight(), OF_IMAGE_COLOR);
+            loopee.update();
             ofImage displayIm;
             displayIm.clone(loopee);
             displayIm.resize(vidPlayer.getWidth()/numLoopsInRow, vidPlayer.getHeight()/numLoopsInRow);
+            displayIm.update();
             //displayIm.resize(loopFrameGrabber.getWidth()/numLoopsInRow, loopFrameGrabber.getHeight()/numLoopsInRow);
             display.push_back(displayIm);
+            vidPlayer.nextFrame();
+            cout << "Updating Vid Player" << endl;
+            vidPlayer.update();
         }
-        //cout << "timeline Frame: " << timeline.getCurrentFrame() << endl;
-        //vidPlayer.setFrame(timeline.getCurrentFrame());
         vidPlayer.setFrame(frameStart);
+        cout << "Updating Vid Player" << endl;
         vidPlayer.update();
         //loopFrameGrabber.close();
         
-        ofVec2f indices = ofVec2f(frameStart, matchIndeces.at(bestEnd));
+        //ofVec2f indices = ofVec2f(frameStart, matchIndeces.at(bestEnd));
+        //int indices[2] = {frameStart,matchIndeces.at(bestEnd)};
+        vector<int> indices;
+        indices.push_back(frameStart);
+        indices.push_back(matchIndeces.at(bestEnd));
         loopIndeces.push_back(indices);
         loopLengths.push_back(display.size());
         displayLoops.push_back(display);
         loopQuality.push_back(minChange);
         //loopQuality.push_back(1 - (minChange/100));
         loopPlayIdx.push_back(0);
+        loopStartMats.push_back(start);
         
         if (!ditchSimilarLoop()) {
             if ( displayLoops.size() >= numLoopsInRow && displayLoops.size()%numLoopsInRow == 1) {
@@ -336,25 +364,28 @@ bool ofApp::ditchSimilarLoop(){
     if (displayLoops.size() == 1)
         return false;
     
-    float changeRatio = MAXFLOAT;
-    cv::Mat prevLoopGray;
-    cv::Mat newLoopGray;
-    cv::cvtColor(toCv(displayLoops.at(displayLoops.size()-2).at(0)), prevLoopGray, CV_RGB2GRAY);
-    cv::cvtColor(toCv(displayLoops.at(displayLoops.size()-1).at(0)), newLoopGray, CV_RGB2GRAY);
-    cv::Mat prevLoopFrame;
-    cv::Mat newLoopFrame;
-    cv::resize(prevLoopGray, prevLoopFrame, imResize);
-    cv::resize(newLoopGray, newLoopFrame, imResize);
+    cv::Mat prevLoopMat;
+    loopStartMats.at(loopStartMats.size()-2).copyTo(prevLoopMat);
+    cv::Mat newLoopMat;
+    loopStartMats.at(loopStartMats.size()-1).copyTo(newLoopMat);
+    //cv::cvtColor(toCv(displayLoops.at(displayLoops.size()-2).at(0)), prevLoopGray, CV_RGB2GRAY);
+    //cv::cvtColor(toCv(displayLoops.at(displayLoops.size()-1).at(0)), newLoopGray, CV_RGB2GRAY);
+    //cv::Mat prevLoopFrame;
+    //cv::Mat newLoopFrame;
+    //cv::resize(prevLoopGray, prevLoopFrame, imResize);
+    //cv::resize(newLoopGray, newLoopFrame, imResize);
 
-    float prevLoopSum = cv::sum(prevLoopFrame)[0] + 1;
+    float prevLoopSum = cv::sum(prevLoopMat)[0] + 1;
     
     cv::Mat diff;
-    cv::absdiff(prevLoopFrame, newLoopFrame, diff);
+    cv::absdiff(prevLoopMat, newLoopMat, diff);
     float endDiff = cv::sum(diff)[0] + 1;
     
-    changeRatio = endDiff/prevLoopSum;
+    float changeRatio = endDiff/prevLoopSum;
     cout << "changeRatio: " << changeRatio << endl;
-    if(changeRatio <= (1-loopThresh/100)){ // the first frames are very similar
+    float changePercent = (changeRatio*100);
+    cout << "changePercent: " << changePercent << endl;
+    if((changeRatio*100) <= (100-loopThresh)){ // the first frames are very similar
         
         if (loopQuality.at(loopQuality.size() - 2) < loopQuality.at(loopQuality.size() -1)) {
             cout << "erasing last one" << endl;
@@ -363,6 +394,7 @@ bool ofApp::ditchSimilarLoop(){
             loopPlayIdx.erase(loopPlayIdx.end() - 1);
             displayLoops.erase(displayLoops.end() - 1);
             loopIndeces.erase(loopIndeces.end() - 1);
+            loopStartMats.erase(loopStartMats.end() - 1);
         }
         else{
             cout << "erasing second to last" << endl;
@@ -371,6 +403,7 @@ bool ofApp::ditchSimilarLoop(){
             loopPlayIdx.erase(loopPlayIdx.end() - 2);
             displayLoops.erase(displayLoops.end() - 2);
             loopIndeces.erase(loopIndeces.end() - 2);
+            loopStartMats.erase(loopStartMats.end() - 2);
         }
         return true;
         
@@ -385,25 +418,25 @@ void ofApp::update(){
     if (!refiningLoop){
         frameStart = timeVid.getCurrentFrame();
         if (videoLoaded && timeline.getIsPlaying() && !needToInitEnds) {
-            //if (timeline.getCurrentFrame() >= vidPlayer.getTotalNumFrames()){
             if (frameStart >= vidPlayer.getTotalNumFrames()){
                 //frameStart = 0;
                 cout << "restarting?"<<endl;
                 initEnds();
                 return;
             }
-            //cout << "timeline Frame at start of check: " << timeline.getCurrentFrame() << endl;
+
             if(checkForLoop()){
                 //cout << "Loop Found" << endl;
             }
             
             populateLoopEnds();
             timeVid.nextFrame();
+            //cout << "Updating Time Vid" << endl;
             timeVid.update();
         }
         else if (videoLoaded && needToInitEnds)
             initEnds();
-            
+        
         for (int i = 0; i < loopPlayIdx.size(); i++) {
             loopPlayIdx.at(i)++;
             if(loopPlayIdx.at(i) >= loopLengths.at(i))
@@ -417,6 +450,7 @@ void ofApp::update(){
         needToInitEnds = false;
         if(timeline.getIsPlaying()){
             timeVid.nextFrame();
+            //cout << "Updating Time Vid" << endl;
             timeVid.update();
         }
     }
@@ -424,7 +458,7 @@ void ofApp::update(){
         drawLoopPoint = ofPoint(guiMatch->getGlobalCanvasWidth() ,timeline.getBottomLeft().y + vidPlayer.getHeight() + loopHeight);
         loopThumbBounds = ofRectangle(drawLoopPoint, ofGetWidth()-guiMatch->getGlobalCanvasWidth(), ofGetHeight()-timeline.getBottomLeft().y-timeVid.getHeight()-loopHeight);
     }
-    
+    //cout << "running Update" << endl;
 }
 
 //------------------------------------------------------------------------------------
@@ -454,13 +488,6 @@ void ofApp::draw(){
             ofSetLineWidth(2);
             ofRect(loopDrawRects.at(loopSelected));
             ofPopStyle();
-            //string instructions = "Press 's' to save.\nPress 'r' to refine the loop.\nLoop Start Frame: " + ofToString((int)loopIndeces.at(loopSelected).x) + "\nLoop End Frame: " + ofToString((int)loopIndeces.at(loopSelected).y) + "\n";
-            //float width = font.getStringBoundingBox(instructions, 0, 0).width;
-            //ofDrawBitmapString(instructions, guiMatch->getGlobalCanvasWidth()/2 - width/2, 3*ofGetHeight()/4);
-            //font.loadFont("GUI/NewMedia Fett.ttf", 10, true, true);
-            //font.setLineHeight(12.0f);
-            //font.setLetterSpacing(1.035);
-            //font.drawString(instructions, 2, 3*ofGetHeight()/4);
         }
         if (!savingGif){
             ofPushMatrix();
@@ -531,29 +558,36 @@ void ofApp::saveGif(int i){
         ofxGifEncoder *giffy = new ofxGifEncoder();
         (*giffy).setup(vidPlayer.getWidth(), vidPlayer.getHeight(), 1/fps, 256);
         int currFrame = vidPlayer.getCurrentFrame();
-        int saveStartFrame = (int)(loopIndeces.at(i).x);
+        //int saveStartFrame = (int)(loopIndeces.at(i).x);
+        int saveStartFrame = (loopIndeces.at(i))[0];
         cout << "saveStartFrame: " << saveStartFrame << endl;
-        int saveEndFrame = (int)(loopIndeces.at(i).y);
+        //int saveEndFrame = (int)(loopIndeces.at(i).y);
+        int saveEndFrame = (loopIndeces.at(i))[1];
         cout << "saveEndFrame: " << saveEndFrame << endl;
         
         ofQTKitDecodeMode decodeMode = OF_QTKIT_DECODE_PIXELS_ONLY;
         ofQTKitPlayer frameSaver;
         frameSaver.loadMovie(videoFilePath,decodeMode);
-        frameSaver.idleMovie();
+        //frameSaver.idleMovie();
         frameSaver.setSynchronousSeeking(true);
 //FIX THIS!!-----------------------------------------------------
-        int currFrameNum = vidPlayer.getCurrentFrame();
+        //int currFrameNum = vidPlayer.getCurrentFrame();
+        frameSaver.play();
+        frameSaver.setPaused(true);
+        frameSaver.setFrame(saveStartFrame-1);
+        //cout << "Updating FrameSaver" << endl;
+        frameSaver.update();
+        frameSaver.nextFrame();
+        //cout << "Updating FrameSaver" << endl;
+        frameSaver.update();
         //mostRecentSaved.clear();
         //mostReceIndex = 0;
-        for (int j = saveStartFrame; j <= saveEndFrame; j++) {
-            //cout << "vidPlayer frame: " << vidPlayer.getCurrentFrame() << endl;
-            frameSaver.setFrame(j);
-            frameSaver.update();
-            //ofImage save;
-            //save.allocate(frameSaver.getWidth(), frameSaver.getHeight(), OF_IMAGE_COLOR);
-            //save.setFromPixels(frameSaver.getPixels(), frameSaver.getWidth(), frameSaver.getHeight(), OF_IMAGE_COLOR);
-            //mostRecentSaved.push_back(save);
+        
+        while (frameSaver.getCurrentFrame() <= saveEndFrame) {
             (*giffy).addFrame(frameSaver.getPixels(), frameSaver.getWidth(),frameSaver.getHeight());
+            frameSaver.nextFrame();
+            //cout << "Updating FrameSaver" << endl;
+            frameSaver.update();
         }
         frameSaver.closeMovie();
         frameSaver.close();
@@ -574,11 +608,13 @@ void ofApp::saveGif(int i){
     savingGif = false;
 }
 
+
 //-------------------------------------------------------------------
 void ofApp::onGifSaved(string &fileName) {
     cout << "gif saved as " << fileName << endl;
     (*gifses.at(gifses.size() -1 )).exit();
 }
+
 
 //-------------------------------------------------------------------
 void ofApp::exit() {
@@ -591,6 +627,8 @@ void ofApp::exit() {
         delete guiMatch;
     }
 }
+
+
 //-------------------------------------------------------------------
 void ofApp::keyPressed(int key){
     if(guiMatch->hasKeyboardFocus())
@@ -603,21 +641,25 @@ void ofApp::keyPressed(int key){
         //    guiMatch->toggleVisible();
 		//	break;
         case 's':
-            if (loopSelected >=0 ) {
+            if (loopSelected >=0 && !refiningLoop){
+                //timeline.stop();
                 saveGif(loopSelected);
             }
             break;
         case 'r':
             if (loopSelected >=0 && !refiningLoop) {
+                //timeline.stop();
                 refineLoop();
             }
             else if(refiningLoop){
+                //timeline.stop();
                 ofRange inOutTotal = ofRange(0.0,1.0);
                 timeline.setInOutRange(inOutTotal);
                 timeline.getZoomer()->setViewRange(oldRange);
                 refiningLoop = false;
-                needToInitEnds = true;
+                //needToInitEnds = true;
                 updateRefinedLoop();
+                needToInitEnds = true;
             }
             break;
         case 'n':
@@ -625,10 +667,12 @@ void ofApp::keyPressed(int key){
                 ofRange inOutTotal = ofRange(0.0,1.0);
                 timeline.setInOutRange(inOutTotal);
                 timeline.getZoomer()->setViewRange(oldRange);
-                refiningLoop = false;
-                needToInitEnds = true;
+                //timeline.stop();
+                //needToInitEnds = true;
                 instructions = "Press 's' to save loop as a GIF. Press 'r' to keep your changes to the loop.";
                 setGuiInstructions();
+                needToInitEnds = true;
+                refiningLoop = false;
             }
             break;
         case ' ':
@@ -642,36 +686,32 @@ void ofApp::keyPressed(int key){
             break;
         case 'o':
             if(refiningLoop){
-                int start = (int)loopIndeces.at(loopSelected).x;
-                loopIndeces.at(loopSelected).y --;
-                int end = (int)loopIndeces.at(loopSelected).y;
+                tempLoopIndeces[1] --;
+                int end = tempLoopIndeces[1];
                 timeline.setOutPointAtFrame(end);
                 timeline.getZoomer()->setViewRange(timeline.getInOutRange());
             }
             break;
         case 'p':
             if(refiningLoop){
-                int start = (int)loopIndeces.at(loopSelected).x;
-                loopIndeces.at(loopSelected).y ++;
-                int end = (int)loopIndeces.at(loopSelected).y;
+                tempLoopIndeces[1] ++;
+                int end = tempLoopIndeces[1];
                 timeline.setOutPointAtFrame(end);
                 timeline.getZoomer()->setViewRange(timeline.getInOutRange());
             }
             break;
         case 'k':
             if(refiningLoop){
-                loopIndeces.at(loopSelected).x --;
-                int start = (int)loopIndeces.at(loopSelected).x;
-                int end = (int)loopIndeces.at(loopSelected).y;
+                tempLoopIndeces[0] --;
+                int start = tempLoopIndeces[0];
                 timeline.setInPointAtFrame(start);
                 timeline.getZoomer()->setViewRange(timeline.getInOutRange());
             }
             break;
         case 'l':
             if(refiningLoop){
-                loopIndeces.at(loopSelected).x ++;
-                int start = (int)loopIndeces.at(loopSelected).x;
-                int end = (int)loopIndeces.at(loopSelected).y;
+                tempLoopIndeces[0] ++;
+                int start = tempLoopIndeces[0];
                 timeline.setInPointAtFrame(start);
                 timeline.getZoomer()->setViewRange(timeline.getInOutRange());
             }
@@ -686,39 +726,109 @@ void ofApp::keyPressed(int key){
 void ofApp::refineLoop(){
     oldRange = timeline.getZoomer()->getViewRange();
     refiningLoop = true;
-    int start = (int)loopIndeces.at(loopSelected).x;
-    int end = (int)loopIndeces.at(loopSelected).y;
+    int start = (loopIndeces.at(loopSelected))[0];
+    int end = (loopIndeces.at(loopSelected))[1];
+    tempLoopIndeces[0] = start;
+    tempLoopIndeces[1] = end;
+    timeVid.setFrame(start);
+    timeVid.update();
+    timeline.stop();
     timeline.setInPointAtFrame(start);
     timeline.setOutPointAtFrame(end);
     timeline.getZoomer()->setViewRange(timeline.getInOutRange());
-    timeVid.setFrame(start);
-    timeVid.update();
-    instructions = "Press 's' to save loop as a GIF. Press 'r' to keep your changes to the loop. Press 'n' to cancel and go back. Press 'o' and 'p' to move the end one frame back or forward. Press 'k' and 'l' to move the beginning one frame back or forward.";
+    instructions = "Press 'r' to keep your changes to the loop. Press 'n' to cancel and go back. Press 'o' and 'p' to move the end one frame back or forward. Press 'k' and 'l' to move the beginning one frame back or forward.";
     setGuiInstructions();
 }
+
 
 //------------------------------------------------------------------------------------
 void ofApp::updateRefinedLoop(){
     int prevFrame = vidPlayer.getCurrentFrame();
-    vector< ofImage> display;
-    vidPlayer.idleMovie();
-    for (int j = loopIndeces.at(loopSelected).x; j <= loopIndeces.at(loopSelected).y; j++) {
-        vidPlayer.setFrame(j);
+    vector<ofImage> display;
+    //vidPlayer.idleMovie();
+    vidPlayer.setPaused(true);
+    //std::copy(tempLoopIndeces, tempLoopIndeces + 2, loopIndeces.at(loopSelected));
+    vector<int> indices;
+    indices.push_back(tempLoopIndeces[0]);
+    indices.push_back(tempLoopIndeces[1]);
+    //loopIndeces.at(loopSelected) = indices;
+    vector< vector<int> >::iterator itIn = loopIndeces.begin() + loopSelected;
+    itIn = loopIndeces.erase(itIn);
+    loopIndeces.insert(itIn,indices);
+    
+    int startIndx = (loopIndeces.at(loopSelected))[0];
+    if (startIndx > 0) {
+        vidPlayer.setFrame(startIndx - 1);
         vidPlayer.update();
+        vidPlayer.nextFrame();
+    }
+    else
+        vidPlayer.setFrame(startIndx);
+
+    vidPlayer.update();
+    cv::Mat startGray;
+    cv::cvtColor(toCv(vidPlayer), startGray, CV_RGB2GRAY);
+    cv::Mat start;
+    cv::resize(startGray, start, imResize);
+    cv::Scalar startMean = cv::mean(startMean);
+    cv::subtract(start,startMean,start);
+    float startSum = cv::sum(start)[0] + 1;
+    
+    //while(vidPlayer.getCurrentFrame() <= (int)loopIndeces.at(loopSelected).y){
+    while(vidPlayer.getCurrentFrame() <= (loopIndeces.at(loopSelected))[1]){
         ofImage loopee;
         loopee.setFromPixels(vidPlayer.getPixels(), vidPlayer.getWidth(), vidPlayer.getHeight(), OF_IMAGE_COLOR);
+        loopee.update();
         ofImage displayIm;
         displayIm.clone(loopee);
         displayIm.resize(vidPlayer.getWidth()/numLoopsInRow, vidPlayer.getHeight()/numLoopsInRow);
+        displayIm.update();
         display.push_back(displayIm);
+        vidPlayer.nextFrame();
+        //cout << "Updating Vid Player" << endl;
+        vidPlayer.update();
+        //potentialLoopEnds.at(i).copyTo(currEnd);
     }
-    vidPlayer.setFrame(prevFrame);
+    vidPlayer.previousFrame();
     vidPlayer.update();
-    loopLengths.at(loopSelected) = display.size();
-    displayLoops.at(loopSelected) = display;
-    loopPlayIdx.at(loopSelected) = 0;
+    cv::Mat endGray;
+    cv::cvtColor(toCv(vidPlayer),endGray,CV_RGB2GRAY);
+    cv::Mat end;
+    cv::resize(endGray, end, imResize);
+    cv::subtract(end, startMean, end);
+    cv::Mat diff;
+    cv::absdiff(start, end, diff);
+    float endDiff = cv::sum(diff)[0] + 1;
+    float changeRatio = endDiff/startSum;
+    
+    vidPlayer.setFrame(prevFrame);
+    //cout << "Updating Vid Player" << endl;
+    vidPlayer.update();
+    
+    vector<int>::iterator it = loopLengths.begin()+loopSelected;
+    it = loopLengths.erase(it);
+    loopLengths.insert(it, display.size());
+    vector<vector<ofImage> >::iterator it2 = displayLoops.begin()+loopSelected;
+    it2 = displayLoops.erase(displayLoops.begin()+loopSelected);
+    displayLoops.insert(it2, display);
+    vector<int>::iterator it3 = loopPlayIdx.begin()+loopSelected;
+    it3 = loopPlayIdx.erase(it3);
+    loopPlayIdx.insert(it3, 0);
+    vector<float>::iterator it4 = loopQuality.begin()+loopSelected;
+    it4 = loopQuality.erase(it4);
+    loopQuality.insert(it4, changeRatio);
+    vector<cv::Mat>::iterator it5 = loopStartMats.begin()+loopSelected;
+    it5 = loopStartMats.erase(it5);
+    loopStartMats.insert(it5, start);
+    //loopLengths.at(loopSelected) = display.size();
+    //displayLoops.at(loopSelected) = display;
+    //loopPlayIdx.at(loopSelected) = 0;
+    //loopQuality.at(loopSelected) = changeRatio;
+    //loopStartMats.at(loopSelected) = start;
 }
 
+
+//------------------------------------------------------------------------------------
 void ofApp::keyReleased(int key){
 }
 
@@ -732,11 +842,12 @@ void ofApp::guiEvent(ofxUIEventArgs &e)
         videoLoaded = false;
 		ofxUIButton *button = (ofxUIButton *) e.getButton();
         if (button->getValue()){
-            pausePlayback = true;
-            ofFileDialogResult result = ofSystemLoadDialog("select video",false);
+            timeline.stop();
+            //pausePlayback = true;
+            ofFileDialogResult result = ofSystemLoadDialog("Choose a Video File",false);
             if(result.bSuccess){
                 //need to clear old data
-                timeline.removeTrack("Video");
+                //timeline.removeTrack("Video");
                 loadVideo(result.getPath(),result.getName());
             }
         }
@@ -793,7 +904,7 @@ void ofApp::setGuiMatch(){
     
     guiMatch->addSpacer();
 	guiMatch->addLabel("Match Slider (percent)",OFX_UI_FONT_SMALL);
-	ofxUISlider *match = guiMatch->addSlider("Accuracy", 80.0, 100.0, &loopThresh);
+	ofxUISlider *match = guiMatch->addSlider("Accuracy", 70.0, 100.0, &loopThresh);
     match->setValue(loopThresh);
     match->setTriggerType(OFX_UI_TRIGGER_ALL);
     
@@ -883,10 +994,12 @@ void ofApp::loadVideo(string videoPath, string videoName){
         ofQTKitDecodeMode decodeMode = OF_QTKIT_DECODE_PIXELS_ONLY;
         
         vidPlayer.loadMovie(videoPath,decodeMode);
-        vidPlayer.idleMovie();
         vidPlayer.setSynchronousSeeking(true);
+        //vidPlayer.idleMovie();
+        vidPlayer.play();
+        vidPlayer.setPaused(true);
         videoFilePath = videoPath;
-        pausePlayback = true;
+        //pausePlayback = true;
         fps = (float)vidPlayer.getTotalNumFrames()/vidPlayer.getDuration();
         minPeriod = (int)(fps*minPeriodSecs);
         maxPeriod = (int)(fps*maxPeriodSecs);
