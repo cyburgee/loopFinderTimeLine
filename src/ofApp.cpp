@@ -105,7 +105,7 @@ void ofApp::populateLoopEnds(){
         
         int endIdx = frameStart + maxPeriod;
         //cout << "adding frame at: " << endIdx << endl;
-        vidPlayer.idleMovie();
+        //vidPlayer.idleMovie();
         if (endIdx < vidPlayer.getTotalNumFrames()){
             vidPlayer.setFrame(endIdx);
             //cout << "Updating Vid Player" << endl;
@@ -464,7 +464,9 @@ void ofApp::update(){
 //------------------------------------------------------------------------------------
 void ofApp::draw(){
     
-    ofBackground(127);
+    ofBackground(255);
+    //cout << "drawing Shit" << endl;
+    /*ofBackground(127);
     
     if(videoLoaded){
         
@@ -504,7 +506,8 @@ void ofApp::draw(){
         font.drawString(loadVidInstruct, ofGetWidth()/2 - width/2, 3*ofGetHeight()/4);
     }
     timeline.draw();
-    guiMatch->setPosition(0, timeline.getBottomLeft().y);
+    guiMatch->setPosition(0, timeline.getBottomLeft().y);*/
+    
 }
 
 //------------------------------------------------------------------------------------
@@ -886,6 +889,7 @@ void ofApp::setGuiInstructions(){
     guiMatch->autoSizeToFitWidgets();
 }
 
+
 //------------------------------------------------------------------------------------
 void ofApp::setGuiMatch(){
 	
@@ -1019,11 +1023,13 @@ void ofApp::loadVideo(string videoPath, string videoName){
     
 }
 
+//--------------------------------------------------------------
 void ofApp::playStopped(ofxTLPlaybackEventArgs& bang){
     pauseFrameNum = timeline.getCurrentFrame();
     cout << "paused" << endl;
 }
 
+//--------------------------------------------------------------
 void ofApp::playStarted(ofxTLPlaybackEventArgs& bang){
     if (timeline.getCurrentFrame() != pauseFrameNum){
         cout << "playhead changed" << endl;
